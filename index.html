@@ -431,7 +431,12 @@ function renderCurrentActivity(data) {
   titleEl.textContent = data.window_title || '';
 
   // Timer (counts up from started_at)
-  const started = data.started_at ? new Date(data.started_at + 'Z').getTime() : Date.now();
+  // started_at now comes with timezone from Supabase; don't blindly append 'Z'
+  let started = Date.now();
+  if (data.started_at) {
+    const t = new Date(data.started_at).getTime();
+    if (!isNaN(t)) started = t;
+  }
   activityStartTime = started;
   if (timerInterval) clearInterval(timerInterval);
   function tick() {
@@ -461,12 +466,14 @@ function renderAppUsage(rows) {
     map[n] += r.duration_seconds || 0;
   }
 
-  // Sort by total desc
+  // Sort by total desc, hide apps with < 1 min
   const sorted = Object.entries(map).sort((a, b) => b[1] - a[1]);
   const grandTotal = sorted.reduce((s, [, v]) => s + v, 0);
   totalEl.textContent = fmt(grandTotal);
 
-  el.innerHTML = sorted.map(([name, dur]) => {
+  el.innerHTML = sorted
+    .filter(([, dur]) => dur >= 60)
+    .map(([name, dur]) => {
     const pct = grandTotal > 0 ? (dur / grandTotal) * 100 : 0;
     return `<div class="app-row">
       <div class="app-icon">${appIcon(name)}</div>
@@ -576,6 +583,8 @@ fetchTimeline();
 subscribeCurrent();
 setInterval(fetchToday, 30000);
 setInterval(fetchTimeline, 60000);
+// Poll current activity periodically as a fallback in case real-time drops
+setInterval(fetchCurrentActivity, 30000);
 </script>
 </body>
 </html>
