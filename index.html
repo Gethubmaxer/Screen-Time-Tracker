@@ -339,7 +339,6 @@ const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 let activityStartTime = null;
 let timerInterval = null;
 let lastUpdatedAt = null;
-let isLive = false;
 
 // --- Helpers ---
 function fmt(seconds) {
@@ -552,7 +551,6 @@ async function fetchCurrentActivity() {
     lastUpdatedAt = data.updated_at;
     renderCurrentActivity(data);
     updateStatus();
-    isLive = true;
   } catch (e) {
     console.warn('fetchCurrent:', e.message);
   }
@@ -566,7 +564,6 @@ function subscribeCurrent() {
         lastUpdatedAt = payload.new.updated_at;
         renderCurrentActivity(payload.new);
         updateStatus();
-        isLive = true;
       }
     )
     .subscribe((s) => { if (s === 'SUBSCRIBED') fetchCurrentActivity(); });
