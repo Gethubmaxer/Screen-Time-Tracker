@@ -43,24 +43,54 @@
     border-bottom: 1px solid var(--border);
   }
   .header-left { display: flex; align-items: center; gap: 12px; }
-  .dot {
-    width: 10px; height: 10px;
+  /* --- Status Pill --- */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    background: rgba(52, 211, 153, 0.15);
+    color: var(--green);
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    transition: all 0.3s;
+    white-space: nowrap;
+  }
+  .status-pill .pill-dot {
+    width: 8px; height: 8px;
     border-radius: 50%;
     background: var(--green);
-    box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
-    transition: all 0.3s;
+    box-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
+    flex-shrink: 0;
   }
-  .dot.offline { background: var(--red); box-shadow: 0 0 8px rgba(248, 113, 113, 0.5); }
-  .dot.waiting { background: var(--muted); box-shadow: none; }
+  .status-pill.offline {
+    background: rgba(248, 113, 113, 0.15);
+    color: var(--red);
+    border-color: rgba(248, 113, 113, 0.3);
+  }
+  .status-pill.offline .pill-dot {
+    background: var(--red);
+    box-shadow: 0 0 6px rgba(248, 113, 113, 0.6);
+  }
+  .status-pill.waiting {
+    background: rgba(136, 136, 170, 0.1);
+    color: var(--dim);
+    border-color: rgba(136, 136, 170, 0.2);
+  }
+  .status-pill.waiting .pill-dot {
+    background: var(--muted);
+    box-shadow: none;
+  }
+  .status-pill .pill-text {
+    line-height: 1;
+  }
   .header h1 {
     font-size: 18px;
     font-weight: 700;
     letter-spacing: -0.3px;
-  }
-  .header-status {
-    font-size: 12px;
-    color: var(--dim);
-    font-weight: 500;
   }
 
   /* --- Current Activity --- */
@@ -254,10 +284,12 @@
   <!-- Header -->
   <div class="header">
     <div class="header-left">
-      <div class="dot waiting" id="statusDot"></div>
       <h1>ScreenTime</h1>
     </div>
-    <span class="header-status" id="statusText">waiting...</span>
+    <div class="status-pill waiting" id="statusPill">
+      <span class="pill-dot"></span>
+      <span class="pill-text" id="statusText">waiting...</span>
+    </div>
   </div>
 
   <!-- Current Activity -->
@@ -340,13 +372,23 @@ function appIcon(name) {
 }
 
 // --- Status (Online / Offline based on updated_at) ---
+// This is the authoritative source: when offline, it ALWAYS clears the
+// stale current activity display. Every status check enforces this.
 function updateStatus() {
-  const dot = document.getElementById('statusDot');
+  const pill = document.getElementById('statusPill');
   const txt = document.getElementById('statusText');
+  const appEl = document.getElementById('currentApp');
+  const titleEl = document.getElementById('currentTitle');
+  const timerEl = document.getElementById('currentTimer');
 
   if (!lastUpdatedAt) {
-    dot.className = 'dot waiting';
-    txt.textContent = 'waiting for data...';
+    pill.className = 'status-pill waiting';
+    txt.textContent = '⏳ waiting...';
+    appEl.textContent = '💤 Waiting';
+    appEl.className = 'current-offline';
+    titleEl.textContent = '';
+    timerEl.textContent = '--';
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     return;
   }
 
@@ -354,14 +396,17 @@ function updateStatus() {
   const secs = elapsed / 1000;
 
   if (secs < 90) {
-    dot.className = 'dot';
-    txt.textContent = isLive ? 'online' : 'online';
-  } else if (secs < 300) {
-    dot.className = 'dot';
-    txt.textContent = `${Math.floor(secs / 60)}m ago`;
+    pill.className = 'status-pill';
+    txt.textContent = '🟢 Online';
   } else {
-    dot.className = 'dot offline';
-    txt.textContent = `offline — ${Math.floor(secs / 60)}m ago`;
+    pill.className = 'status-pill offline';
+    txt.textContent = `🔴 Offline — ${Math.floor(secs / 60)}m ago`;
+    // Force-clear stale current activity — no stale app should stay visible
+    appEl.textContent = '💤 Offline';
+    appEl.className = 'current-offline';
+    titleEl.textContent = '';
+    timerEl.textContent = '--';
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   }
 }
 
@@ -371,18 +416,13 @@ function renderCurrentActivity(data) {
   const titleEl = document.getElementById('currentTitle');
   const timerEl = document.getElementById('currentTimer');
 
+  // No data or empty — show idle. Status tick will override to "Offline" if stale.
   if (!data || !data.app_name || data.app_name === 'Not running' || data.app_name === '') {
-    if (lastUpdatedAt && Date.now() - new Date(lastUpdatedAt).getTime() > 120000) {
-      appEl.textContent = '💤 Offline / No data';
-      appEl.className = 'current-offline';
-      titleEl.textContent = '';
-      timerEl.textContent = '--';
-    } else {
-      appEl.textContent = '💤 Idle';
-      appEl.className = 'current-offline';
-      titleEl.textContent = '';
-      timerEl.textContent = '--';
-    }
+    appEl.textContent = '💤 Idle';
+    appEl.className = 'current-offline';
+    titleEl.textContent = '';
+    timerEl.textContent = '--';
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     return;
   }
 
@@ -390,7 +430,7 @@ function renderCurrentActivity(data) {
   appEl.className = 'current-name';
   titleEl.textContent = data.window_title || '';
 
-  // Timer
+  // Timer (counts up from started_at)
   const started = data.started_at ? new Date(data.started_at + 'Z').getTime() : Date.now();
   activityStartTime = started;
   if (timerInterval) clearInterval(timerInterval);
@@ -526,13 +566,9 @@ function subscribeCurrent() {
 }
 
 // --- Status heartbeat (every 15s) ---
-setInterval(() => {
-  updateStatus();
-  // If we've had no update for 2+ minutes, show stale state
-  if (lastUpdatedAt && Date.now() - new Date(lastUpdatedAt).getTime() > 120000) {
-    renderCurrentActivity(null);
-  }
-}, 15000);
+// updateStatus() is the authoritative source — it clears stale current activity
+// whenever it detects offline. No separate stale-render needed.
+setInterval(() => { updateStatus(); }, 15000);
 
 // --- Init ---
 fetchToday();
