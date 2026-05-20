@@ -92,6 +92,15 @@
     font-weight: 700;
     letter-spacing: -0.3px;
   }
+  .version-badge {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted);
+    background: var(--card);
+    padding: 2px 8px;
+    border-radius: 8px;
+    letter-spacing: 0.3px;
+  }
 
   /* --- Current Activity --- */
   .current-box {
@@ -290,6 +299,7 @@
   <div class="header">
     <div class="header-left">
       <h1>ScreenTime</h1>
+      <span class="version-badge" id="versionBadge"></span>
     </div>
     <div class="status-pill waiting" id="statusPill">
       <span class="pill-dot"></span>
@@ -569,6 +579,7 @@ async function fetchCurrentActivity() {
     if (error) throw error;
     lastUpdatedAt = data.updated_at;
     renderCurrentActivity(data);
+    document.getElementById('versionBadge').textContent = data.version ? 'v' + data.version : '';
     updateStatus();
   } catch (e) {
     console.warn('fetchCurrent:', e.message);
@@ -582,6 +593,7 @@ function subscribeCurrent() {
       (payload) => {
         lastUpdatedAt = payload.new.updated_at;
         renderCurrentActivity(payload.new);
+        document.getElementById('versionBadge').textContent = payload.new.version ? 'v' + payload.new.version : '';
         updateStatus();
       }
     )
