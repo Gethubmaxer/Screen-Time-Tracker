@@ -135,6 +135,11 @@
     font-size: 16px;
     font-weight: 500;
   }
+  .current-idle {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--dim);
+  }
 
   /* --- Total Card --- */
   .total-card {
@@ -425,6 +430,16 @@ function renderCurrentActivity(data) {
     return;
   }
 
+  // Explorer showing the desktop = at home screen, not an active app
+  if (data.app_name === 'explorer.exe' && data.window_title === 'Program Manager') {
+    appEl.textContent = '🖥️ At desktop';
+    appEl.className = 'current-idle';
+    titleEl.textContent = 'No active application';
+    timerEl.textContent = '';
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    return;
+  }
+
   appEl.textContent = `${appIcon(data.app_name)} ${data.app_name}`;
   appEl.className = 'current-name';
   titleEl.textContent = data.window_title || '';
@@ -457,9 +472,12 @@ function renderAppUsage(rows) {
     return;
   }
 
+  // Filter out Explorer desktop shell noise
+  const filtered = rows.filter(r => !(r.app_name === 'explorer.exe' && r.window_title === 'Program Manager'));
+
   // Group by app_name, sum durations
   const map = {};
-  for (const r of rows) {
+  for (const r of filtered) {
     const n = r.app_name;
     if (!map[n]) map[n] = 0;
     map[n] += r.duration_seconds || 0;
@@ -492,8 +510,9 @@ function renderTimeline(rows) {
     return;
   }
 
-  // Filter out sub-10s noise (task switches)
-  const filtered = rows.filter(r => (r.duration_seconds || 0) >= 10);
+  // Filter out sub-10s noise (task switches) and Explorer desktop shell
+  const filtered = rows.filter(r => (r.duration_seconds || 0) >= 10)
+    .filter(r => !(r.app_name === 'explorer.exe' && r.window_title === 'Program Manager'));
 
   if (filtered.length === 0) {
     el.innerHTML = '<div class="empty">No significant activity recorded today</div>';
@@ -515,7 +534,7 @@ async function fetchToday() {
     const start = new Date(); start.setHours(0, 0, 0, 0);
     const { data, error } = await sb
       .from('activity_logs')
-      .select('app_name, duration_seconds')
+      .select('app_name, window_title, duration_seconds')
       .gte('start_time', start.toISOString());
     if (error) throw error;
     renderAppUsage(data);
@@ -569,6 +588,19 @@ function subscribeCurrent() {
     .subscribe((s) => { if (s === 'SUBSCRIBED') fetchCurrentActivity(); });
 }
 
+// --- Subscribe to new completed sessions → refresh timeline + app usage instantly ---
+function subscribeLogs() {
+  sb.channel('activity-log-changes')
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'activity_logs' },
+      () => {
+        fetchTimeline();
+        fetchToday();
+      }
+    )
+    .subscribe();
+}
+
 // --- Status heartbeat (every 15s) ---
 // updateStatus() is the authoritative source — it clears stale current activity
 // whenever it detects offline. No separate stale-render needed.
@@ -578,6 +610,7 @@ setInterval(() => { updateStatus(); }, 15000);
 fetchToday();
 fetchTimeline();
 subscribeCurrent();
+subscribeLogs();
 setInterval(fetchToday, 30000);
 setInterval(fetchTimeline, 60000);
 // Poll current activity periodically as a fallback in case real-time drops
