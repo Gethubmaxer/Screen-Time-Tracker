@@ -378,6 +378,7 @@ function appIcon(name) {
     word: '📝', excel: '📊', powerpoint: '📽', onenote: '📓',
     outlook: '📧', teams: '💬', discord: '💬', slack: '💬',
     spotify: '🎵', youtube: '▶️', netflix: '▶️',
+    lockapp: '🔒',
     explorer: '📁', terminal: '⌨️', cmd: '⌨️', powershell: '⌨️',
     notepad: '📄', calculator: '🔢',
   };
@@ -429,6 +430,16 @@ function renderCurrentActivity(data) {
   const appEl = document.getElementById('currentApp');
   const titleEl = document.getElementById('currentTitle');
   const timerEl = document.getElementById('currentTimer');
+
+  // Lock screen, idle, or no data — don't count as screentime
+  if (data && data.app_name?.toLowerCase() === 'lockapp.exe') {
+    appEl.textContent = '🔒 Locked';
+    appEl.className = 'current-offline';
+    titleEl.textContent = 'Screen is locked';
+    timerEl.textContent = '--';
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    return;
+  }
 
   // No data or empty — show idle. Status tick will override to "Offline" if stale.
   if (!data || !data.app_name || data.app_name === 'Not running' || data.app_name === '') {
@@ -482,8 +493,9 @@ function renderAppUsage(rows) {
     return;
   }
 
-  // Filter out Explorer desktop shell noise
-  const filtered = rows.filter(r => !(r.app_name === 'explorer.exe' && r.window_title === 'Program Manager'));
+  // Filter out Explorer desktop shell noise and lock screen
+  const filtered = rows.filter(r => !(r.app_name === 'explorer.exe' && r.window_title === 'Program Manager'))
+    .filter(r => r.app_name?.toLowerCase() !== 'lockapp.exe');
 
   // Group by app_name, sum durations
   const map = {};
@@ -520,9 +532,10 @@ function renderTimeline(rows) {
     return;
   }
 
-  // Filter out sub-10s noise (task switches) and Explorer desktop shell
+  // Filter out sub-10s noise (task switches), Explorer desktop shell, and lock screen
   const filtered = rows.filter(r => (r.duration_seconds || 0) >= 10)
-    .filter(r => !(r.app_name === 'explorer.exe' && r.window_title === 'Program Manager'));
+    .filter(r => !(r.app_name === 'explorer.exe' && r.window_title === 'Program Manager'))
+    .filter(r => r.app_name?.toLowerCase() !== 'lockapp.exe');
 
   if (filtered.length === 0) {
     el.innerHTML = '<div class="empty">No significant activity recorded today</div>';
